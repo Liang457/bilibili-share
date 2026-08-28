@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Bilibili 富文本分享
 // @namespace    https://cool-gk.cn/
-// @version      0.6
+// @version      0.7
 // @description  从分享链接提取 BV 号并复制视频信息（HTML 格式）——替换原分享按钮行为
 // @author       cool-gk
 // @match        https://www.bilibili.com/video/*
@@ -11,13 +11,48 @@
 // @grant        GM_notification
 // @grant        GM_registerMenuCommand
 // @grant        GM_setClipboard
+// @grant        GM_getValue
+// @grant        GM_setValue
 // ==/UserScript==
 
 (function () {
     'use strict';
 
+    const NOTIFY_KEY = 'notifyEnabled';
+
+    /**
+     * 是否开启消息通知弹窗
+     */
+    function isNotificationEnabled() {
+        return GM_getValue(NOTIFY_KEY, true);
+    }
+
+    /**
+     * 统一通知出口：始终写入控制台；仅当开关开启时额外弹出通知
+     * @param {string} text - 通知内容
+     */
+    function showNotification(text) {
+        console.info('[Bilibili 富文本分享]', text);
+        if (!isNotificationEnabled()) return;
+        GM_notification({
+            text: text,
+            title: 'Bilibili 富文本分享',
+            timeout: 3000
+        });
+    }
+
+    /**
+     * 切换消息通知开关
+     */
+    function toggleNotification() {
+        const enabled = !isNotificationEnabled();
+        GM_setValue(NOTIFY_KEY, enabled);
+        showNotification(enabled ? '消息通知已开启' : '消息通知已关闭（仍会写入控制台）');
+    }
+
     // 注册油猴菜单命令（手动触发）
     GM_registerMenuCommand("📤 富文本分享视频", doShare);
+    GM_registerMenuCommand(isNotificationEnabled() ? '🔔 消息通知：开启（点击关闭）' : '🔔 消息通知：关闭（点击开启）', toggleNotification);
 
     /**
      * 核心分享函数：获取视频信息并复制 HTML 到剪贴板
@@ -32,41 +67,25 @@
                 const param = pgcMatch[1] === 'ep' ? `ep_id=${pgcMatch[2]}` : `season_id=${pgcMatch[2]}`;
                 const info = await fetchBangumiInfo(param);
                 if (!info) {
-                    GM_notification({
-                        text: '获取番剧信息失败，请检查网络',
-                        title: 'Bilibili 富文本分享',
-                        timeout: 3000
-                    });
+                    showNotification('获取番剧信息失败，请检查网络');
                     return;
                 }
                 const shortUrl = `https://b23.tv/${pgcMatch[1]}${pgcMatch[2]}`;
                 const html = `「${info.title}」<br><a href="${shortUrl}">${shortUrl}</a><br><img src="${info.pic}" alt="${info.title}">`;
                 GM_setClipboard(html, 'html');
-                GM_notification({
-                    text: '番剧信息已复制到剪贴板（HTML 格式）',
-                    title: 'Bilibili 富文本分享',
-                    timeout: 3000
-                });
+                showNotification('番剧信息已复制到剪贴板（HTML 格式）');
                 return;
             }
 
             const BV_number = extractBV(url);
             if (!BV_number) {
-                GM_notification({
-                    text: '未能在当前页面找到 BV 号',
-                    title: 'Bilibili 富文本分享',
-                    timeout: 3000
-                });
+                showNotification('未能在当前页面找到 BV 号');
                 return;
             }
 
             const info = await fetchBilibiliInfo(BV_number);
             if (!info) {
-                GM_notification({
-                    text: '获取视频信息失败，请检查网络或 BV 号',
-                    title: 'Bilibili 富文本分享',
-                    timeout: 3000
-                });
+                showNotification('获取视频信息失败，请检查网络或 BV 号');
                 return;
             }
 
@@ -74,18 +93,10 @@
             const html = `「${info.title}」——${info.owner}<br><a href="${shortLink}">${shortLink}</a><br><img src="${info.pic}" alt="${info.title}">`;
 
             GM_setClipboard(html, 'html');
-            GM_notification({
-                text: '视频信息已复制到剪贴板（HTML 格式）',
-                title: 'Bilibili 富文本分享',
-                timeout: 3000
-            });
+            showNotification('视频信息已复制到剪贴板（HTML 格式）');
         } catch (err) {
             console.error('分享失败:', err);
-            GM_notification({
-                text: '操作失败: ' + err.message,
-                title: 'Bilibili 富文本分享',
-                timeout: 3000
-            });
+            showNotification('操作失败: ' + err.message);
         }
     }
 
