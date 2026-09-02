@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Bilibili 富文本分享
 // @namespace    https://cool-gk.cn/
-// @version      0.7
-// @description  从分享链接提取 BV 号并复制视频信息（HTML 格式）——替换原分享按钮行为
+// @version      0.8
+// @description  从分享链接提取 BV 号/av 号并复制视频信息（HTML 格式）——替换原分享按钮行为
 // @author       cool-gk
 // @match        https://www.bilibili.com/video/*
 // @match        https://www.bilibili.com/festival/*
@@ -78,18 +78,24 @@
             }
 
             const BV_number = extractBV(url);
-            if (!BV_number) {
-                showNotification('未能在当前页面找到 BV 号');
+            const avNumber = BV_number ? null : extractAV(url);
+            if (!BV_number && !avNumber) {
+                showNotification('未能在当前页面找到 BV 号或 av 号');
                 return;
             }
 
-            const info = await fetchBilibiliInfo(BV_number);
+            const kind = BV_number ? 'bv' : 'av';
+            const videoId = BV_number || avNumber;
+
+            const info = await fetchBilibiliInfo(videoId, kind);
             if (!info) {
-                showNotification('获取视频信息失败，请检查网络或 BV 号');
+                showNotification('获取视频信息失败，请检查网络或 BV/av 号');
                 return;
             }
 
-            const shortLink = `https://b23.tv/${BV_number}`;
+            // 分享链接输出随页面形式：av 页输出 b23.tv/av…，BV 页输出 b23.tv/BV…
+            const shareId = kind === 'av' ? `av${videoId}` : videoId;
+            const shortLink = `https://b23.tv/${shareId}`;
             const html = `「${info.title}」——${info.owner}<br><a href="${shortLink}">${shortLink}</a><br><img src="${info.pic}" alt="${info.title}">`;
 
             GM_setClipboard(html, 'html');
@@ -111,15 +117,27 @@
     }
 
     /**
-     * 通过 BV 号调用 Bilibili API 获取视频信息
-     * @param {string} bv - BV 号
+     * 从文本中提取 av 号后的数字部分
+     * @param {string} text - 要搜索的文本
+     * @returns {string|null} 提取到的数字（如 "170001"），未找到则返回 null
+     */
+    function extractAV(text) {
+        const match = text.match(/av(\d+)/i);
+        return match ? match[1] : null;
+    }
+
+    /**
+     * 通过视频编号调用 Bilibili API 获取视频信息
+     * @param {string} id - 视频编号（BV 号或 av 号数字部分）
+     * @param {string} kind - 'bv' 用 bvid 查询，'av' 用 aid 查询
      * @returns {Promise<{title:string, owner:string, pic:string}|null>}
      */
-    function fetchBilibiliInfo(bv) {
+    function fetchBilibiliInfo(id, kind = 'bv') {
+        const param = kind === 'av' ? `aid=${id}` : `bvid=${id}`;
         return new Promise((resolve) => {
             GM_xmlhttpRequest({
                 method: 'GET',
-                url: `https://api.bilibili.com/x/web-interface/view?bvid=${bv}`,
+                url: `https://api.bilibili.com/x/web-interface/view?${param}`,
                 onload: function (resp) {
                     try {
                         const data = JSON.parse(resp.responseText);

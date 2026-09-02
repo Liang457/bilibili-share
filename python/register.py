@@ -27,7 +27,8 @@ def register():
     test_html = f"""
     <h2>点击测试链接</h2>
     <a href="{PROTOCOL}://share/video?id=BV1xx411c7mD">测试链接1（带参数）</a><br><br>
-    <a href="{PROTOCOL}://open">测试链接2（无参数）</a>
+    <a href="{PROTOCOL}://share/video?id=av170001">测试链接2（av号）</a><br><br>
+    <a href="{PROTOCOL}://open">测试链接3（无参数）</a>
     """
     with open("test_protocol.html", "w", encoding='utf-8') as f:
         f.write(test_html)

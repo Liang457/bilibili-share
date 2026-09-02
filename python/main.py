@@ -35,10 +35,16 @@ def extract_bv_number(text: str) -> str | None:
     match = re.search(pattern, text)
     return match.group(0) if match else None
 
+def extract_av_number(text: str) -> str | None:
+    """从文本中提取 B 站视频 av 号后的数字部分（如 av170001 -> "170001"）"""
+    pattern = r'\bav(\d+)'
+    match = re.search(pattern, text, re.IGNORECASE)
+    return match.group(1) if match else None
+
 def resolve_from_short_url(short_url: str) -> dict | None:
     """
     访问短链接，跟随重定向，从最终 URL 中提取 video/PGC 信息。
-    返回 {'type': 'bv', 'id': '...'} 或 {'type': 'ep', 'id': '...'} 或 {'type': 'ss', 'id': '...'}
+    返回 {'type': 'bv', 'id': '...'} 或 {'type': 'av', 'id': '...'} 或 {'type': 'ep', 'id': '...'} 或 {'type': 'ss', 'id': '...'}
     失败返回 None。
     """
     headers = {'User-Agent': UA}
@@ -61,21 +67,31 @@ def resolve_from_short_url(short_url: str) -> dict | None:
     if bv:
         return {'type': 'bv', 'id': bv}
 
-    # 方法3：从响应 HTML 中的链接提取 BV 号
+    # 方法3：从最终 URL 中提取 av 号
+    av = extract_av_number(final_url)
+    if av:
+        return {'type': 'av', 'id': av}
+
+    # 方法4：从响应 HTML 中的链接提取 BV 号或 av 号
     href_pattern = r'<a\s+[^>]*href="([^"]+)"'
     for href in re.findall(href_pattern, resp.text, re.IGNORECASE):
         bv = extract_bv_number(href)
         if bv:
             return {'type': 'bv', 'id': bv}
+        av = extract_av_number(href)
+        if av:
+            return {'type': 'av', 'id': av}
 
     return None
 
-def fetch_video_info(bv: str) -> dict:
+def fetch_video_info(video_id: str, kind: str = 'bv') -> dict:
     """
     调用 B 站 API 获取视频信息。
+    kind 为 'av' 时用 aid 查询，否则用 bvid 查询。
     返回包含 title, owner, pic 的字典，失败时抛出异常。
     """
-    api_url = f"https://api.bilibili.com/x/web-interface/view?bvid={bv}"
+    param = f"aid={video_id}" if kind == 'av' else f"bvid={video_id}"
+    api_url = f"https://api.bilibili.com/x/web-interface/view?{param}"
     try:
         resp = requests.get(api_url, headers=API_HEADERS, timeout=10)
         resp.raise_for_status()
@@ -137,9 +153,9 @@ def fetch_bangumi_info(**kwargs) -> dict:
         'pic': result.get('cover', '')
     }
 
-def build_html_clip(bv: str, title: str, owner: str, pic_url: str) -> str:
+def build_html_clip(share_id: str, title: str, owner: str, pic_url: str) -> str:
     """生成要放入剪贴板的 HTML 内容"""
-    short_url = f"https://b23.tv/{bv}"
+    short_url = f"https://b23.tv/{share_id}"
     html = (
         f"「{title}」——{owner}<br>"
         f"<a href='{short_url}'>{short_url}</a><br>"
@@ -176,7 +192,7 @@ def main():
         print(f"使用命令行参数作为输入: {input_text}")
     else:
         print("B站视频信息提取助手")
-        print("请输入分享链接或BV号：")
+        print("请输入分享链接或BV号/av号：")
         input_text = sys.stdin.readline().strip()
         if not input_text:
             print("输入为空，程序退出。")
@@ -189,9 +205,12 @@ def main():
         handle_pgc(pgc_match.group(1), pgc_match.group(2), input_text)
         return
 
+    # 识别结果统一用 (kind, id) 表示：kind 为 'bv'/'av'，id 为 BV 号或 av 数字串
+    kind = None
+    vid = None
+
     # 步骤1：尝试从输入中提取短链接
     short_url = extract_short_url(input_text)
-    bv = None
 
     if short_url:
         print(f"检测到短链接: {short_url}")
@@ -202,32 +221,40 @@ def main():
                 print(f"通过短链接解析到番剧 ({resolved['type']}{resolved['id']})")
                 handle_pgc(resolved['type'], resolved['id'], input_text)
                 return
-            else:
-                bv = resolved['id']
-                print(f"通过短链接解析到 BV 号: {bv}")
+            kind, vid = resolved['type'], resolved['id']
+            print(f"通过短链接解析到 {'av 号' if kind == 'av' else 'BV 号'}: {'av' + vid if kind == 'av' else vid}")
         else:
-            print("短链接解析失败，将尝试直接从原始输入提取 BV 号。")
+            print("短链接解析失败，将尝试直接从原始输入提取 BV 号或 av 号。")
 
-    # 步骤2：如果未通过短链接获得 BV 号，则直接从输入文本提取
-    if not bv:
+    # 步骤2：如果未通过短链接获得编号，则直接从输入文本提取（优先 BV，其次 av）
+    if not vid:
         bv = extract_bv_number(input_text)
         if bv:
+            kind, vid = 'bv', bv
             print(f"从输入中提取到 BV 号: {bv}")
+        else:
+            av = extract_av_number(input_text)
+            if av:
+                kind, vid = 'av', av
+                print(f"从输入中提取到 av 号: av{av}")
 
-    # 步骤3：若仍未获得 BV 号，报错退出
-    if not bv:
-        print("错误：未能从输入中识别出有效的 BV 号或番剧 ID。")
+    # 步骤3：若仍未获得编号，报错退出
+    if not vid:
+        print("错误：未能从输入中识别出有效的 BV 号、av 号或番剧 ID。")
         print("支持的格式示例：")
         print("  - BV1xx411c7mD")
+        print("  - av170001")
         print("  - https://www.bilibili.com/video/BV1xx411c7mD")
+        print("  - https://www.bilibili.com/video/av170001")
         print("  - https://b23.tv/xxxxxx")
+        print("  - https://b23.tv/av170001")
         print("  - https://www.bilibili.com/bangumi/play/ep1183104")
         print("  - https://b23.tv/ss73077")
         sys.exit(1)
 
     # 获取视频信息
     try:
-        info = fetch_video_info(bv)
+        info = fetch_video_info(vid, kind)
     except RuntimeError as e:
         print(f"获取视频信息失败: {e}")
         sys.exit(1)
@@ -236,8 +263,9 @@ def main():
     print(f"UP主: {info['owner']}")
     print(f"封面: {info['pic']}")
 
-    # 生成 HTML 内容并放入剪贴板
-    html_content = build_html_clip(bv, info['title'], info['owner'], info['pic'])
+    # 分享链接输出随输入形式：av 输入输出 b23.tv/av…，BV 输入输出 b23.tv/BV…
+    share_id = f"av{vid}" if kind == 'av' else vid
+    html_content = build_html_clip(share_id, info['title'], info['owner'], info['pic'])
     try:
         set_html(html_content)
         print("✅ 视频信息已复制到剪贴板（HTML格式）。")

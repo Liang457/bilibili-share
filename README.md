@@ -31,14 +31,20 @@ python register.py  # 注册 gkbilishare:// 协议
 | 页面 | URL 格式 | 分享链接 |
 |------|----------|----------|
 | 普通视频 | `/video/BVxxx` | `b23.tv/BVxxx` |
+| 普通视频（av 兼容） | `/video/av170001` | `b23.tv/av170001` |
 | 活动页 | `/festival/...` | `b23.tv/BVxxx` |
 | 番剧单集 | `/bangumi/play/ep123` | `b23.tv/ep123` |
 | 番剧季度 | `/bangumi/play/ss123` | `b23.tv/ss123` |
 
+> 普通视频同时兼容 av 号页面，分享链接输出随页面/输入形式（av 输入输出 `b23.tv/av…`，BV 输入输出 `b23.tv/BV…`）。
+
 ## 支持的输入格式（Python CLI）
 
 - `BV1xx411c7mD`
+- `av170001`
 - `https://www.bilibili.com/video/BV1xx411c7mD`
+- `https://www.bilibili.com/video/av170001`
 - `https://b23.tv/BV1xx411c7mD`
+- `https://b23.tv/av170001`
 - `https://www.bilibili.com/bangumi/play/ep1183104`
 - `https://b23.tv/ss73077`
